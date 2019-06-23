@@ -3,6 +3,7 @@ This repository contains several implementations of papers that I read during my
 
 ### 1. Playing Atari with Deep Reinforcement Learning, Mnih et al, 2013.
 https://www.cs.toronto.edu/~vmnih/docs/dqn.pdf
+#### Algorithm : Q-Learning
 #### Abstract
 We present the first deep learning model to successfully learn control policies directly from high-dimensional sensory input using reinforcement learning. The
 model is a convolutional neural network, trained with a variant of Q-learning,
