@@ -4,6 +4,6 @@ This repository contains several implementations of papers that I read during my
 ### 1. Human-level control through deep reinforcement learning, Mnih et al, 2015.
 * **Gist** : Use DeepRL to achieve above human level performance in ATARI Games
 * **Paper** : https://www.nature.com/articles/nature14236.pdf
-* **Algorithm** : Q-Learning
+* **Algorithm/Techniques** : Q-Learning, Experience Replay
 * **My Notes** : https://drive.google.com/file/d/121Io5nAj_yhY_eObHoAwhe9Qhcu3xmDY/view?usp=sharing
 
