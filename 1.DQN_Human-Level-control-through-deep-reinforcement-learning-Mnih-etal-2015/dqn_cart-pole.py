@@ -12,7 +12,7 @@ device = torch.device('cuda' if torch.cuda.is_available else 'cpu')
 class ReplayMemory(object):
     def __init__(self, size=1000000, agent_history_length=4, batch_size=32, obs_space_shape = 4):
         """
-        Simple Replay Memory implementation as described in Minh et al. 2015
+        Memory Efficient Replay Memory implementation as described in Minh et al. 2015
 
         Default Hyperparameters in Appendix for more info: https://www.nature.com/articles/nature14236.pdf
         Parameters
@@ -43,7 +43,9 @@ class ReplayMemory(object):
         self.rewards_minibatch = np.empty((self.batch_size, ))
         self.next_obs_minibatch = self.obs_minibatch.copy()
         self.done_minibatch = np.empty((self.batch_size, ))
-    def add(self, obs, action, reward, done):
+
+
+    def add(self, obs, action, reward, next_obs, done):
         """
         Add an experience to replay memory
         Parameters
@@ -54,9 +56,12 @@ class ReplayMemory(object):
             An action from Gym environment of shape (<env.action_space.n>, )
         reward: float
             Reward for calling env.step(action) on obs
+        next_obs: np.array
+            Next observation from calling env.step(action) on obs
         done: boolean
             Boolean stating whether the episode terminated (also from calling env.step(action) on obs)
         """
+
         #Update state of Replay Memory to include new information
         self.observations[self.count, ...] = obs
         self.actions[self.count] = action
@@ -64,11 +69,9 @@ class ReplayMemory(object):
         self.done_flags[self.count] = done
         self.count = max(self.count, self.idx+1) 
         self.idx = (self.idx+1) % self.size #if self.idx == self.size, resets to zero
-
         
     def sample(self):
-        """
-        Sample a random minibatch of states
+        """ Sample a random minibatch of states
         (default implementation is batch_size=32 & env=CartPole-v1)
         Returns:
         -------
@@ -83,17 +86,23 @@ class ReplayMemory(object):
         done_minibatch: np.array
             Shape (<self.batch_size>, ) - default implementation: (32,)
         """
+
         #Sample array of random indicies [agent_history_length-1, agent_history_length, ...., self.count] without repetition
         sampling_idxs = random.sample(range(self.agent_history_length-1, self.count), self.batch_size) 
+        
+        zero_array = np.zeros((self.agent_history_length, self.obs_space_shape))
 
         for i, sample_idx in enumerate(sampling_idxs):
             #Add current sampled observation (sample_idx) and the past <self.agent_history_length> sampled observations as a sample in the minibatch
             start_idx = sample_idx + 1 - self.agent_history_length
             end_idx = sample_idx + 1
+
             self.obs_minibatch[i, ...] = self.observations[start_idx:end_idx, ...]
             self.next_obs_minibatch[i, ...] = self.observations[start_idx + 1:end_idx + 1]
             self.actions_minibatch[i] = self.actions[sample_idx]
             self.rewards_minibatch[i] = self.rewards[sample_idx]
+            self.done_minibatch[i] = self.done_flags[sample_idx]
+            #in this case, there is no next_obs -> just append zeros
             
 def main():
     #Make OpenAI gym environment
