@@ -55,10 +55,10 @@ class Simple_ReplayMemory(object):
         """
 
         #Update state of Replay Memory to include new information
-        self.observations[self.count, ...] = obs
-        self.actions[self.count, 0] = action
-        self.rewards[self.count, 0] = reward
-        self.done_flags[self.count, 0] = done
+        self.observations[self.idx, ...] = obs
+        self.actions[self.idx, 0] = action
+        self.rewards[self.idx, 0] = reward
+        self.done_flags[self.idx, 0] = done
         self.count = max(self.count, self.idx+1) 
         self.idx = (self.idx+1) % self.max_size #if self.idx == self.max_size, resets to zero
 
@@ -76,7 +76,7 @@ class Simple_ReplayMemory(object):
             Shape (<self.batch_size>, 1) - default implementation: (32,1)
         next_obs_minibatch: np.array
             Same as obs_minibatch
-        done_minibatch: np.array
+        done_minibatch: np.array (uint8)
             Shape (<self.batch_size>, 1) - default implementation: (32,1)
         """
 
@@ -95,13 +95,13 @@ class Simple_ReplayMemory(object):
         actions_minibatch = self.actions[sampling_idxs, ...]
         rewards_minibatch = self.rewards[sampling_idxs, ...]
         done_minibatch = self.done_flags[sampling_idxs, ...]
-        return obs_minibatch, next_obs_minibatch, actions_minibatch, rewards_minibatch, done_minibatch
+        return obs_minibatch, next_obs_minibatch, actions_minibatch, rewards_minibatch, done_minibatch.astype(np.float32)
 
 def _weights_init(m):
     if hasattr(m, 'weight'):
         nn.init.kaiming_uniform_(m.weight, a=0, nonlinearity='relu')
     if hasattr(m, 'bias'):
-        nn.init.constant(m.bias, 0)
+        nn.init.constant_(m.bias, 0)
 
 class Simple_DQN(nn.Module):
     def __init__(self, obs_space_shape, action_space_shape):
@@ -138,27 +138,63 @@ class Simple_DQN(nn.Module):
         
         Parameters
         ----------
-        obs: np.array
+        obs: tensor
             Observations of shape (batch_size, <obs_space_shape>)
         
         Returns
         -------
-        act: np.array
+        act: tensor
             Actions of shape (batch_size, <action_space_shape>)
         """
         return self.model(obs)
     
+def epsilon_at_t(t):
+    """
+    Defines "epsilon" for frame "t" for epsilon-greedy exploration strategy that follows a piecewise function
+    W/ probability "epsilon", we choose a random action at - otherwise we choose at=argmax_at[Q(st, at)] (Read Mnih et al. 2015)
+
+    Parameters
+    ----------
+    t: int
+        Frame number (Frames encountered later in training have higher frame nums.)
+
+    Returns
+    -------
+    epsilon: float
+        Defines the parameter for epsilon-greedy exploration
+    """
+    epsilon = 0
+    function_type = 'exp'
+    if function_type == 'lin':
+        lt = 700
+        rt = 4000
+        #Start off always exploring
+        if t < lt:
+            epsilon = 1
+        #Linearly decrease exploration param
+        elif t >= lt and t < rt:
+            alpha = float(t - lt) / (rt - lt)
+            epsilon = 1 + alpha * (0.01 - 1)
+        #Fix a very low exploration param for t > 4000
+        else:
+            epsilon = 0.01
+    elif function_type == 'exp':
+        factor = 500
+        epsilon = 0.01 + (1 - 0.01) * math.exp(-1. * t / factor)
+    elif function_type == 'decay':
+        decay = 0.4
+        epsilon = 0.01 + (1 - 0.01) * (decay ** t)
+    return epsilon
+
 def main():
     #Make OpenAI gym environment (we only consider discrete binary action spaces)
-    env = gym.make('CartPole-v1')
+    env = gym.make('CartPole-v0')
+    env = gym.wrappers.Monitor(env, './data/ting.pkl', video_callable=False, force=True)
     obs_space_shape = env.observation_space.shape[0]
     action_space_shape = env.action_space.n
-
-    #Make Q-network and Target Q-network
-    q_net = 
-
+    
     #Set random seeds
-    seed = random.randint(0, 9999)
+    seed = 6582
     torch.manual_seed(seed)
     if torch.cuda.is_available:
         torch.cuda.manual_seed(seed)
@@ -166,10 +202,81 @@ def main():
     random.seed(seed)
     env.seed(seed)
 
-    #We alter the default hyperparameters presented in Mihn et al. due to low-dimensionality of the Cart-Pole environment
-    replay_memory = Simple_ReplayMemory(size=10000, batch_size=32, obs_space_shape=obs_space_shape)
+    #Initialize Replay Memory (Line 1)
+    replay_memory = Simple_ReplayMemory(size=1000, batch_size=32, obs_space_shape=obs_space_shape)
+
+    #Make Q-network and Target Q-network (Lines 2 & 3) 
+    qnet = Simple_DQN(obs_space_shape, action_space_shape).to(device)
+    target_qnet = Simple_DQN(obs_space_shape, action_space_shape).to(device)
+    target_qnet.load_state_dict(qnet.state_dict())
+
+    #Training Parameters (Changes from Mnih et al. outlined in README.md)
+    optimizer = optim.Adam(qnet.parameters(), lr=1e-3)
+    num_frames = 100000
+    gamma = 0.99
+    replay_start_size = 33
+    target_network_update_freq = 10
     
-    
+    #Train
+    obs = env.reset()
+    for t in range(num_frames):
+        epsilon = epsilon_at_t(t)
+        #-------------------------------------------------------------------
+        #Take one step in the environment & add to Replay Memory (Line 7-11)
+        #-------------------------------------------------------------------
+        torch.set_grad_enabled(False)
+        #Select action with epsilon-greedy exploration (Line 7,8)
+        if random.random() > epsilon:
+            ts_obs = torch.from_numpy(obs.astype(np.float32)).view(1, -1).to(device)
+            ts_qvals = qnet(ts_obs)
+            action = ts_qvals.max(-1)[1].item()
+        else:
+            action = random.randint(0, action_space_shape-1)
+        torch.set_grad_enabled(True)
+        #Execute action and get reward + next_obs (Line 9, 10)
+        next_obs, reward, done, _ = env.step(action)
+
+        #Store transition in Replay Memory
+        replay_memory.add(obs, action, reward, done)
+        obs = next_obs
+        if done:
+            obs = env.reset()
+
+        #Populate Replay Memory with <replay_start_size> experiences before learning
+        if t > replay_start_size:
+            #---------------------------------------------
+            #Sample batch & compute loss & update network (Lines 12 - 15)
+            #---------------------------------------------
+            obs_minibatch, next_obs_minibatch, actions_minibatch, rewards_minibatch, done_minibatch = replay_memory.sample()
+
+            ts_obs, ts_actions, ts_rewards, ts_next_obs, ts_done = map(lambda x: torch.from_numpy(x).to(device), [obs_minibatch, actions_minibatch, rewards_minibatch, next_obs_minibatch, done_minibatch])
+
+            ts_actions = ts_actions.long() 
+
+            torch.set_grad_enabled(False)
+            #Compute Target Values 
+            ts_next_qvals = target_qnet(ts_next_obs) #(32, 2)
+            ts_next_action = ts_next_qvals.argmax(-1, keepdim=True) #(32, 1)
+            ts_next_action_qvals = ts_next_qvals.gather(-1, ts_next_action).view(-1) #(32,)
+            ts_target_q = ts_rewards.view(-1) + gamma * ts_next_action_qvals * (1 - ts_done)
+            torch.set_grad_enabled(True)
+
+            #Compute predicted 
+            ts_pred_q = qnet(ts_obs).gather(-1, ts_actions).view(-1) #(32,)
+
+            loss = F.mse_loss(ts_pred_q, ts_target_q)
+            #Compute Huber Loss (Also smooth L1 Loss) (Line 14)
+            # loss = F.smooth_l1_loss(ts_pred_q, ts_target_q)
+
+            #Perform gradient descent (Line 14)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            #Update target network ever <target_network_update_freq> steps (Line 15)
+            if t % target_network_update_freq == 0:
+                target_qnet.load_state_dict(qnet.state_dict())
+        #Log stuff
+        episode_rewards = env.get_episode_rewards()
+        print('Timesteps', t,'Mean Reward', np.mean(episode_rewards[-100:]))
 if __name__ == "__main__":
     main()
-
