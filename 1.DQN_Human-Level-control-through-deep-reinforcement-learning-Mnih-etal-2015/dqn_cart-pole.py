@@ -5,49 +5,34 @@ import torch.nn.functional as F
 import torch
 import numpy as np
 import math, random
+from datetime import datetime
 from collections import deque
-import logging
-logger = logging.getLogger(__name__)
+
+now = datetime.now()
 device = torch.device('cuda' if torch.cuda.is_available else 'cpu')
 
 class Simple_ReplayMemory(object):
-    def __init__(self, size=10000, batch_size=32, obs_space_shape = 4):
+    def __init__(self, max_size=10000, batch_size=32, obs_space_shape = 4):
         """
         Simple Replay Memory implementation for low-dimensional data observations (eg. Classic Control envs) 
-
-        Parameters
-        ----------
-        size: int
-            Max number of transitions to store in the buffer
-        batch_size: int
-            Number of states returned in a minibatch
-        obs_space_shape: int
-            The size of the vector representing the observation space 
+        obs_space_shape: Integer, env.observation_space.shape[0] = 4 for CartPole
         """
         super(Simple_ReplayMemory, self).__init__()
 
-        self.max_size, self.batch_size, self.obs_space_shape = size, batch_size,obs_space_shape
+        self.max_size, self.batch_size, self.obs_space_shape = max_size, batch_size,obs_space_shape
         self.memory = deque(maxlen=self.max_size)
         self.count = 0 #keep track of the number of elements
 
     def add(self, obs, next_obs, action, reward, done):
             """
             Add an experience to replay memory
-            Parameters
-            ----------
-            obs: np.array 
-                An observation from the Gym environment of shape (<self.obs_space_shape>,) (For Cart-Pole this is (4, ))
-            next_obs: np.array 
-                The next observation from the Gym environment of shape (<self.obs_space_shape>,) (For Cart-Pole this is (4, ))
-            action: np.array
-                An action from Gym environment of shape (<env.action_space.n>, )
-            reward: float
-                Reward for calling env.step(action) on obs
+            obs: np.array, shape (self.obs_space_shape, ) = (4, ) for CartPole
+            next_obs: np.array, shape (self.obs_space_shape, ) = (4, ) for CartPole
+            action: np.array, shape (env.action_space.n, ) = (2, ) for CartPole
+            reward: float 
             done: boolean
-                Boolean stating whether the episode terminated (also from calling env.step(action) on obs)
             """
-
-            obs      = np.expand_dims(obs, 0).astype(np.float32) #turns to (1, 4) for Cart-Pole
+            obs = np.expand_dims(obs, 0).astype(np.float32) #turns to (1, 4) for Cart-Pole
             next_obs = np.expand_dims(next_obs, 0).astype(np.float32)
             self.count = min(self.max_size, self.count + 1)
             self.memory.append((obs, action, reward, next_obs, done))
@@ -56,27 +41,20 @@ class Simple_ReplayMemory(object):
         """ Sample a random minibatch of states
         (default implementation is batch_size=32 & env=CartPole-v1)
 
-        Returns:
-        -------
-        obs_minibatch: np.array
-            Shape (<self.batch_size>, <self.obs_space_shape>) - default implementation : (32, 4)
-        actions_minibatch: np.array
-            Shape (<self.batch_size>, <env.action_space.n>) - default implementation : (32,1)
-        rewards_minibatch: tuple
-            len = <self.batch_size>- default implementation: len = 32
-        next_obs_minibatch: np.array
-            Same as obs_minibatch
-        done_minibatch: tuple
-            len = <self.batch_size>- default implementation: len = 32
+        obs_minibatch: np.array shape (self.batch_size, self.obs_space_shape) = (32, 4)
+        actions_minibatch: np.array shape (self.batch_size, env.action_space.n) = (32,1)
+        rewards_minibatch: tuple len = self.batch_size = 32
+        next_obs_minibatch: np.array- same as obs_minibatch
+        done_minibatch: tuple len = <self.batch_size> = 32
         """
         obs_minibatch, actions_minibatch, rewards_minibatch, next_obs_minibatch, done_minibatch = zip(*random.sample(self.memory, self.batch_size))
-
         actions_minibatch = np.expand_dims(actions_minibatch, 1)
+
         return np.concatenate(obs_minibatch), np.concatenate(next_obs_minibatch), actions_minibatch, rewards_minibatch, done_minibatch
 
 def _weights_init(m):
     if hasattr(m, 'weight'):
-        nn.init.xavier_uniform_(m.weight)
+        nn.init.kaiming_uniform_(m.weight)
     if hasattr(m, 'bias'):
         nn.init.constant_(m.bias, 0)
 
@@ -84,14 +62,9 @@ class Simple_DQN(nn.Module):
     def __init__(self, obs_space_shape, action_space_shape):
         """
         Neural Network that predicts the Q-value for all actions "a_t" given an input state "s_t" for low dimensional action space
-        Visit: http://rail.eecs.berkeley.edu/deeprlcourse/static/slides/lec-7.pdf for more info
-
-        Parameters
-        ----------
-        obs_space_shape:int 
-            The size of the vector representing the observation space (for Cartpole = 4)
-        action_space_shape:int
-            The size of the vector representing the action space (for Cartpole = 2)
+        Visit: http://rail.eecs.berkeley.edu/deeprlcourse/static/slides/lec-7.pdf 
+        obs_space_shape:int, env.observation_space.shape[0] = (for Cartpole = 4)
+        action_space_shape:int, env.action_space.n = (for Cartpole = 2)
         """
         super(Simple_DQN, self).__init__()
 
@@ -104,41 +77,24 @@ class Simple_DQN(nn.Module):
             nn.Linear(128, action_space_shape)
         )
 
-        #Xavier Initialization (Apply if you want, works better without it)
+        #He Initialization (Paper applies it, works better without it)
         # self.apply(_weights_init)
 
     def forward(self, obs):
         """
-        Run a forward pass through Neural Network
-        
-        Parameters
-        ----------
-        obs: tensor
-            Observations of shape (batch_size, <obs_space_shape>)
-        
-        Returns
-        -------
-        act: tensor
-            Actions of shape (batch_size, <action_space_shape>)
+        obs: tensor, shape (batch_size, <obs_space_shape>)
+        Returns tensor shape (batch_size, <action_space_shape>)
         """
         return self.model(obs)
     
 def epsilon_at_t(t):
     """
-    Defines "epsilon" for frame "t" for epsilon-greedy exploration strategy that follows a piecewise function
+    Defines "epsilon" for frame "t" for epsilon-greedy exploration strategy 
     W/ probability "epsilon", we choose a random action at - otherwise we choose at=argmax_at[Q(st, at)] (Read Mnih et al. 2015)
-
-    Parameters
-    ----------
-    t: int
-        Frame number (Frames encountered later in training have higher frame nums.)
-
-    Returns
-    -------
-    epsilon: float
-        Defines the parameter for epsilon-greedy exploration
+    t: int, Frame number (Frames encountered later in training have higher frame nums.) 
+    Returns epsilon: float 
     """
-    #exp works better, but the paper uses lin
+    #exp works better for CartPole, but the paper uses lin
     epsilon = 0
     function_type = 'exp'
     if function_type == 'lin':
@@ -155,14 +111,15 @@ def epsilon_at_t(t):
         else:
             epsilon = 0.01
     elif function_type == 'exp':
-        factor = 500
+        factor = 400
         epsilon = 0.01 + (1 - 0.01) * math.exp(-1. * t / factor)
     return epsilon
 
 def main():
     #Make OpenAI gym environment (we only consider discrete binary action spaces)
     env = gym.make('CartPole-v1')
-    env = gym.wrappers.Monitor(env, './data/ting.pkl', video_callable=False, force=True)
+    date_time = now.strftime("%H:%M:%S, %m/%d/%Y")
+    env = gym.wrappers.Monitor(env, './data_' + date_time)
     obs_space_shape = env.observation_space.shape[0]
     action_space_shape = env.action_space.n
     
@@ -176,7 +133,7 @@ def main():
     env.seed(seed)
 
     #Initialize Replay Memory (Line 1)
-    replay_memory = Simple_ReplayMemory(size=1000, batch_size=32, obs_space_shape=obs_space_shape)
+    replay_memory = Simple_ReplayMemory(max_size=10000, batch_size=32, obs_space_shape=obs_space_shape)
 
     #Make Q-network and Target Q-network (Lines 2 & 3) 
     qnet = Simple_DQN(obs_space_shape, action_space_shape).to(device)
@@ -185,15 +142,17 @@ def main():
 
     #Training Parameters (Changes from Mnih et al. outlined in README.md)
     optimizer = optim.Adam(qnet.parameters())
-    num_frames = 10000
+    num_frames = 100000
     gamma = 0.99
     replay_start_size = 32
-    target_network_update_freq = 1
+    target_network_update_freq = 100
     
     #Train
     obs = env.reset()
+    num_episodes = 0
     for t in range(1, num_frames+1):
         epsilon = epsilon_at_t(t)
+
         #-------------------------------------------------------------------
         #Take one step in the environment & add to Replay Memory (Line 7-11)
         #-------------------------------------------------------------------
@@ -214,8 +173,10 @@ def main():
         replay_memory.add(obs, next_obs, action, reward, done)
 
         obs = next_obs
+
         if done:
             obs = env.reset()
+            num_episodes += 1
 
         #Populate Replay Memory with <replay_start_size> experiences before learning
         if t > replay_start_size:
@@ -228,20 +189,18 @@ def main():
             ts_actions = torch.LongTensor(actions_minibatch).to(device)
 
             torch.set_grad_enabled(False)
-            #Compute Target Values 
-            ts_next_qvals = qnet(ts_next_obs) #uncomment this line to use base qnet to evaluate target value
-            # ts_next_qvals = target_qnet(ts_next_obs) #(32, 2)
+            # #Compute Target Values 
+            ts_next_qvals = target_qnet(ts_next_obs) #(32, 2)
             ts_next_action = ts_next_qvals.argmax(-1, keepdim=True) #(32, 1)
             ts_next_action_qvals = ts_next_qvals.gather(-1, ts_next_action).view(-1) #(32,)
             ts_target_q = ts_rewards + gamma * ts_next_action_qvals * (1 - ts_done)
             torch.set_grad_enabled(True)
 
-            #Compute predicted 
+            #Compute predicted
             ts_pred_q = qnet(ts_obs).gather(-1, ts_actions).view(-1) #(32,)
 
+            #Calculate Loss Perform gradient descent (Line 14) Paper uses Huber Loss, but MSE works better for CartPole
             loss = F.mse_loss(ts_pred_q, ts_target_q)
-
-            #Perform gradient descent (Line 14)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -250,9 +209,9 @@ def main():
             if t % target_network_update_freq == 0:
                 target_qnet.load_state_dict(qnet.state_dict())
 
-        #Log stuff
+        #Log to Terminal
         episode_rewards = env.get_episode_rewards()
-        print('Timesteps', t,'Mean Reward', np.mean(episode_rewards[-100:]))
-
+        print('Timesteps', t, 'Episode', num_episodes,'Mean Reward', np.mean(episode_rewards[-100:]))
+    env.env.close()
 if __name__ == "__main__":
     main()
