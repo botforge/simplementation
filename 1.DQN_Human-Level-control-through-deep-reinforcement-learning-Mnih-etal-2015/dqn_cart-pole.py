@@ -84,8 +84,6 @@ class Simple_DQN(nn.Module):
     def __init__(self, obs_space_shape, action_space_shape):
         """
         Neural Network that predicts the Q-value for all actions "a_t" given an input state "s_t" for low dimensional action space
-        The Q-Value is the output function Q(s_t, a_t) that estimates the expected future reward of taking an action "a_t" in state "s_t"
-        For the CartPole problem, this function will predict the expected future reward of "moving left" and "moving right" given 4 joint states.
         Visit: http://rail.eecs.berkeley.edu/deeprlcourse/static/slides/lec-7.pdf for more info
 
         Parameters
@@ -106,7 +104,7 @@ class Simple_DQN(nn.Module):
             nn.Linear(128, action_space_shape)
         )
 
-        #He Initialization
+        #Xavier Initialization (Apply if you want, works better without it)
         # self.apply(_weights_init)
 
     def forward(self, obs):
@@ -140,11 +138,12 @@ def epsilon_at_t(t):
     epsilon: float
         Defines the parameter for epsilon-greedy exploration
     """
+    #exp works better, but the paper uses lin
     epsilon = 0
     function_type = 'exp'
     if function_type == 'lin':
         lt = 700
-        rt = 4000
+        rt = 2000
         #Start off always exploring
         if t < lt:
             epsilon = 1
@@ -158,9 +157,6 @@ def epsilon_at_t(t):
     elif function_type == 'exp':
         factor = 500
         epsilon = 0.01 + (1 - 0.01) * math.exp(-1. * t / factor)
-    elif function_type == 'decay':
-        decay = 0.4
-        epsilon = 0.01 + (1 - 0.01) * (decay ** t)
     return epsilon
 
 def main():
@@ -189,14 +185,14 @@ def main():
 
     #Training Parameters (Changes from Mnih et al. outlined in README.md)
     optimizer = optim.Adam(qnet.parameters())
-    num_frames = 50000
+    num_frames = 10000
     gamma = 0.99
-    replay_start_size = 33
-    target_network_update_freq = 10
+    replay_start_size = 32
+    target_network_update_freq = 1
     
     #Train
     obs = env.reset()
-    for t in range(num_frames):
+    for t in range(1, num_frames+1):
         epsilon = epsilon_at_t(t)
         #-------------------------------------------------------------------
         #Take one step in the environment & add to Replay Memory (Line 7-11)
@@ -208,8 +204,9 @@ def main():
             ts_qvals = qnet(ts_obs)
             action = ts_qvals.max(-1)[1].item()
         else:
-            action = random.randint(0, action_space_shape-1)
+            action = random.randrange(action_space_shape)
         torch.set_grad_enabled(True)
+
         #Execute action and get reward + next_obs (Line 9, 10)
         next_obs, reward, done, _ = env.step(action)
 
@@ -232,28 +229,30 @@ def main():
 
             torch.set_grad_enabled(False)
             #Compute Target Values 
-            ts_next_qvals = target_qnet(ts_next_obs) #(32, 2)
+            ts_next_qvals = qnet(ts_next_obs) #uncomment this line to use base qnet to evaluate target value
+            # ts_next_qvals = target_qnet(ts_next_obs) #(32, 2)
             ts_next_action = ts_next_qvals.argmax(-1, keepdim=True) #(32, 1)
             ts_next_action_qvals = ts_next_qvals.gather(-1, ts_next_action).view(-1) #(32,)
-            ts_target_q = ts_rewards.view(-1) + gamma * ts_next_action_qvals * (1 - ts_done)
+            ts_target_q = ts_rewards + gamma * ts_next_action_qvals * (1 - ts_done)
             torch.set_grad_enabled(True)
 
             #Compute predicted 
             ts_pred_q = qnet(ts_obs).gather(-1, ts_actions).view(-1) #(32,)
 
             loss = F.mse_loss(ts_pred_q, ts_target_q)
-            #Compute Huber Loss (Also smooth L1 Loss) (Line 14)
-            # loss = F.smooth_l1_loss(ts_pred_q, ts_target_q)
 
             #Perform gradient descent (Line 14)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+
             #Update target network ever <target_network_update_freq> steps (Line 15)
             if t % target_network_update_freq == 0:
                 target_qnet.load_state_dict(qnet.state_dict())
+
         #Log stuff
         episode_rewards = env.get_episode_rewards()
         print('Timesteps', t,'Mean Reward', np.mean(episode_rewards[-100:]))
+
 if __name__ == "__main__":
     main()
