@@ -18,7 +18,7 @@ class Simple_ReplayMemory(object):
         """
         super(Simple_ReplayMemory, self).__init__()
 
-        self.max_size, self.batch_size = max_size, batch_size,obs_space_shape
+        self.max_size, self.batch_size = max_size, batch_size
         self.memory = deque(maxlen=self.max_size)
         self.count = 0 #keep track of the number of elements
 
