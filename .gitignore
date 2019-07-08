@@ -1,3 +1,6 @@
 /1.DQN_Human-Level-control-through-deep-reinforcement-learning-Mnih-etal-2015/dqn_sub.py
 /1.DQN_Human-Level-control-through-deep-reinforcement-learning-Mnih-etal-2015/data_*
 **/_*
+**/data_*
+.*
+**/.*
