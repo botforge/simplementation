@@ -108,7 +108,7 @@ def epsilon_at_t(t):
         else:
             epsilon = 0.01
     elif function_type == 'exp':
-        factor = 400
+        factor = 500
         epsilon = 0.01 + (1 - 0.01) * math.exp(-1. * t / factor)
     return epsilon
 
@@ -116,7 +116,7 @@ def main():
     #Make OpenAI gym environment
     env = gym.make('CartPole-v0')
     date_time = now.strftime("_%H:%M:%S_%m-%d-%Y")
-    env = gym.wrappers.Monitor(env, './data_dqn_cartpole' + date_time)
+    env = gym.wrappers.Monitor(env, './data_double-dqn_cartpole' + date_time)
     obs_space_shape = env.observation_space.shape[0]
     action_space_shape = env.action_space.n
     
@@ -130,7 +130,7 @@ def main():
     env.seed(seed)
 
     #Initialize Replay Memory (Line 1)
-    replay_memory = Simple_ReplayMemory(max_size=10000, batch_size=32)
+    replay_memory = Simple_ReplayMemory(max_size=100000, batch_size=32)
 
     #Make Q-network and Target Q-network (Lines 2 & 3) 
     qnet = Simple_DQN(obs_space_shape, action_space_shape).to(device)
@@ -138,11 +138,11 @@ def main():
     target_qnet.load_state_dict(qnet.state_dict())
 
     #Training Parameters (Changes from Mnih et al. outlined in README.md)
-    optimizer = optim.Adam(qnet.parameters())
+    optimizer = optim.Adam(qnet.parameters(), lr=1e-4)
     num_frames = 100000
     gamma = 0.99
     replay_start_size = 32
-    target_network_update_freq = 100
+    target_network_update_freq = 10
     
     #Train
     obs = env.reset()
@@ -186,11 +186,12 @@ def main():
             ts_actions = torch.LongTensor(actions_minibatch).to(device)
 
             torch.set_grad_enabled(False)
-            # #Compute Target Values 
-            ts_next_qvals = target_qnet(ts_next_obs) #(32, 2)
-            ts_next_action = ts_next_qvals.argmax(-1, keepdim=True) #(32, 1)
-            ts_next_action_qvals = ts_next_qvals.gather(-1, ts_next_action).view(-1) #(32,)
-            ts_target_q = ts_rewards + gamma * ts_next_action_qvals * (1 - ts_done)
+            # Compute Target Values (as per Double-DQN update rule)
+            ts_next_qvals_outer = qnet(ts_next_obs) #(32, 2) (outer Qnet, evaluates value)
+            ts_next_qvals_inner = target_qnet(ts_next_obs) #(32, 2) (inner Qnet, evaluates action)
+            ts_next_action_inner = ts_next_qvals_inner.argmax(-1, keepdim=True) #(32, 1)
+            ts_next_action_qvals_outer = ts_next_qvals_outer.gather(-1, ts_next_action_inner).view(-1) #(32, ) (use inner actions to evaluate outer Q values)
+            ts_target_q = ts_rewards + gamma * ts_next_action_qvals_outer * (1 - ts_done)
             torch.set_grad_enabled(True)
 
             #Compute predicted
@@ -203,8 +204,7 @@ def main():
             optimizer.step()
 
             #Update target network ever <target_network_update_freq> steps (Line 15)
-            if t % target_network_update_freq == 0:
-                target_qnet.load_state_dict(qnet.state_dict())
+            if t % target_network_update_freq == 0: target_qnet.load_state_dict(qnet.state_dict())
 
         #Log to Terminal
         episode_rewards = env.get_episode_rewards()
