@@ -199,11 +199,12 @@ def main():
             ts_actions = torch.LongTensor(actions_minibatch).to(device)
 
             torch.set_grad_enabled(False)
-            # #Compute Target Values 
-            ts_next_qvals = target_qnet(ts_next_obs) #(32, 2)
-            ts_next_action = ts_next_qvals.argmax(-1, keepdim=True) #(32, 1)
-            ts_next_action_qvals = ts_next_qvals.gather(-1, ts_next_action).view(-1) #(32,)
-            ts_target_q = ts_rewards + gamma * ts_next_action_qvals * (1 - ts_done)
+            # Compute Target Values (as per Double-DQN update rule)
+            ts_next_qvals_outer = qnet(ts_next_obs) #(32, 2) (outer Qnet, evaluates value)
+            ts_next_qvals_inner = target_qnet(ts_next_obs) #(32, 2) (inner Qnet, evaluates action)
+            ts_next_action_inner = ts_next_qvals_inner.argmax(-1, keepdim=True) #(32, 1)
+            ts_next_action_qvals_outer = ts_next_qvals_outer.gather(-1, ts_next_action_inner).view(-1) #(32, ) (use inner actions to evaluate outer Q values)
+            ts_target_q = ts_rewards + gamma * ts_next_action_qvals_outer * (1 - ts_done)
             torch.set_grad_enabled(True)
 
             #Compute predicted
