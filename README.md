@@ -1,5 +1,5 @@
 # simplementation
-Clean implementations of papers I read for research in robotics + handwritten notes on them. It aims to offer well commented code that flows well. I vaguely structure these according to: https://spinningup.openai.com/en/latest/spinningup/keypapers.html
+Clean implementations of papers I read for research in robotics + handwritten notes on some of them. It aims to offer well commented code that flows well. I vaguely structure these according to: https://spinningup.openai.com/en/latest/spinningup/keypapers.html
 
 ### 1. Human-level control through deep reinforcement learning, Mnih et al, <em>Nature</em> 2015.
 * **Gist** : Use DeepRL and Deep Q-Learning (DQN) to achieve above human level performance in ATARI Games
