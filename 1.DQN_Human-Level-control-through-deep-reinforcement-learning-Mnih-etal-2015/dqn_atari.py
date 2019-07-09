@@ -81,7 +81,7 @@ class Atari_DQN(nn.Module):
         )
 
         # Xavier Initialization 
-        self.apply(_weights_init)
+        #self.apply(_weights_init)
 
     def forward(self, obs):
         """
@@ -101,8 +101,8 @@ def epsilon_at_t(t):
     Returns epsilon: float 
     """
     epsilon = 0
-    function_type = 'lin' #Paper uses lin, but you can try exp too
-    if function_type == 'exp':
+    function_type = 'exp' #Paper uses lin, but you can try exp too
+    if function_type == 'lin':
         lt = 50000
         rt = 1000000
         #Start off always exploring
@@ -143,7 +143,7 @@ def main():
     env.seed(seed)
 
     #Initialize Replay Memory (Line 1)
-    replay_memory = ReplayMemory(max_size=1000000)
+    replay_memory = ReplayMemory(max_size=100000)
 
     #Make Q-Network and Target Q-Network (Lines 2 & 3)
     qnet = Atari_DQN(obs_space_shape, action_space_shape).to(device)
@@ -151,10 +151,11 @@ def main():
     target_qnet.load_state_dict(qnet.state_dict())
 
     #Training Parameters (Changes from Mnih et al. outlined in README.md)
-    optimizer = optim.RMSprop(qnet.parameters(), momentum=0.95, lr=0.00025, eps=0.01)
+    #optimizer = optim.RMSprop(qnet.parameters(), momentum=0.95, lr=0.00025, eps=0.01)
+    optimizer = optim.Adam(qnet.parameters(), lr=0.00001)
     num_frames = 1400000 
     gamma = 0.99
-    replay_start_size = 50000
+    replay_start_size = 10000
     target_network_update_freq = 1
 
     #Train
@@ -210,8 +211,8 @@ def main():
             ts_pred_q = qnet(ts_obs).gather(-1, ts_actions).view(-1) #(32,)
 
             #Calculate Loss & Perform gradient descent (Line 14) 
-            loss = F.smooth_l1_loss(ts_pred_q, ts_target_q)
-            # loss = F.mse_loss(ts_pred_q, ts_target_q)
+            #loss = F.smooth_l1_loss(ts_pred_q, ts_target_q)
+            loss = F.mse_loss(ts_pred_q, ts_target_q)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
