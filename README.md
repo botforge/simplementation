@@ -13,3 +13,8 @@ Clean implementations of papers I read for research in robotics + handwritten no
 * **Algorithm/Techniques** : Double-DQN, Experience Replay
 * **My Notes** : 
 
+### 3. Dueling Network Architectures for Deep Reinforcement Learning, Wang et al, 2016.
+* **Gist** : Propose the "Dueling Network Architecture" that computes an estimate of the value function & and an estimate of the advantage seperately to evaluate the Q-value. 
+* **Paper** : https://arxiv.org/pdf/1511.06581.pdf
+* **Algorithm/Techniques** : Dueling Q-Network, Experience Replay
+* **My Notes** : 
