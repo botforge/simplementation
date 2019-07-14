@@ -18,3 +18,9 @@ Clean implementations of papers I read for research in robotics + handwritten no
 * **Paper** : https://arxiv.org/pdf/1511.06581.pdf
 * **Algorithm/Techniques** : Dueling Q-Network, Experience Replay
 * **My Notes** : 
+
+### 4. Prioritized Experience Replay, Schaul et al, <em>ICLR</em> 2016.
+* **Gist** :  
+* **Paper** : ### 4. Prioritized Experience Replay, Wang et al, 2016.
+* **Algorithm/Techniques** : Prioritized Experience Replay, Q-Learning 
+* **My Notes** : 
